@@ -15,7 +15,7 @@ impl Error for InvalidConstituencyName {
         "Failed to get constituency name"
     }
 
-    fn cause(&self) -> Option<&Error> {
+    fn cause(&self) -> Option<&dyn Error> {
         // Generic error, underlying cause isn't tracked.
         None
     }
@@ -35,7 +35,7 @@ impl Error for NotFamiliarRowType {
         "Can't detect the type of row automatically"
     }
 
-    fn cause(&self) -> Option<&Error> {
+    fn cause(&self) -> Option<&dyn Error> {
         // Generic error, underlying cause isn't tracked.
         None
     }
