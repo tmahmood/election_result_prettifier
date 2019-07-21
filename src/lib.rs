@@ -4,7 +4,7 @@ use csv::{StringRecord, Writer};
 use std::error::Error;
 use std::path::Path;
 use std::collections::HashMap;
-use crate::errors::{InvalidConstituencyName};
+use crate::errors::InvalidConstituencyName;
 use regex::Regex;
 use std::collections::btree_map::BTreeMap;
 
@@ -24,7 +24,7 @@ impl CenterDetails {
     fn new(constituency: &str, center: &str) -> CenterDetails {
         CenterDetails {
             constituency: constituency.to_string(),
-            center: center.to_string()
+            center: center.to_string(),
         }
     }
 }
@@ -47,7 +47,6 @@ pub fn get_constituencies_translated() -> HashMap<String, String> {
         b = !b;
     }
     cons_list
-
 }
 
 // get constituency name
@@ -72,13 +71,14 @@ pub fn aggregate_result_by_symbols(file_name: &str, output_file: &str) -> Result
     println!("Starting ...");
     // start reading the csv file
     let const_translate = get_constituencies_translated();
+    let other_columns = vec!["মোট বৈধ", "মোট বাতিল", "প্রদত্ত ভোট", "শতকরা হার"].iter().map(|s| s.to_string().clone()).collect::<Vec<String>>();
     let rdr = csv::ReaderBuilder::new()
         .has_headers(false)
         .from_path(Path::new(file_name));
     // all the data are aggregated in to a map
-    let mut aggregated_data: BTreeMap<CenterDetails, BTreeMap<String, i32>> = BTreeMap::new();
+    let mut aggregated_data: BTreeMap<CenterDetails, BTreeMap<String, String>> = BTreeMap::new();
     // list of all the symbols
-    let mut symbol_list : Vec<String>= Vec::new();
+    let mut symbol_list: Vec<String> = Vec::new();
     let mut constituency = String::new();
     // if next row is the list of symbols
     let mut symbol_list_row = false;
@@ -119,28 +119,28 @@ pub fn aggregate_result_by_symbols(file_name: &str, output_file: &str) -> Result
             // no need to process this row anymore
             continue;
         }
-        // center
-        let center = record.get(0).unwrap().trim();
         // store the votes
         let mut results = BTreeMap::new();
-        for i in 0..symbol_positions.len() {
-            results.insert(
-                symbol_positions[i].to_string(),
-                // first 2 columns of the record are, center and total votes. Skip them
-                record.get(i + 2).unwrap().parse::<i32>().unwrap_or(0)
-            );
-        }
+        get_result(&record, &symbol_positions, &mut results);
+        get_other_columns(&record, &other_columns, symbol_positions.len() + 2, &mut results);
+        results.insert("total_voters".to_string(), record.get(1).unwrap().to_string());
+        // center
+        let center = record.get(0).unwrap().trim();
+        // add to output map
         aggregated_data.insert(CenterDetails::new(constituency.as_str(), center), results);
     }
+    // we will add all the symbols and then generate CSV file,
+    // which is why we are storing all symbols in the list
     symbol_list.sort();
     println!("Symbols found: {}", symbol_list.len());
-    // now generate rows for CSV
+    // now generate rows for CSV,
     let mut result_rows = Vec::new();
     aggregated_data.iter().for_each(|(k, v)| {
         let mut row = vec![
             k.constituency.clone(),
             k.center.clone(),
         ];
+        // set values in the symbols
         symbol_list.iter().for_each(|symbol| {
             let votes: String = match v.get(symbol) {
                 None => "0".to_string(),
@@ -148,6 +148,14 @@ pub fn aggregate_result_by_symbols(file_name: &str, output_file: &str) -> Result
             };
             row.push(votes);
         });
+        other_columns.iter().for_each(|symbol| {
+            let votes: String = match v.get(symbol) {
+                None => "0".to_string(),
+                Some(i) => format!("{}", i),
+            };
+            row.push(votes);
+        });
+        row.push(v["total_voters"].clone());
         result_rows.push(row);
     });
     println!("Rows found: {}", result_rows.len());
@@ -155,6 +163,8 @@ pub fn aggregate_result_by_symbols(file_name: &str, output_file: &str) -> Result
     let mut writer = Writer::from_path(output_file).unwrap();
     let mut headers = vec!["Constituency".to_string(), "Center".to_string()];
     headers.extend(symbol_list);
+    headers.extend(other_columns);
+    headers.push("total_voters".to_string());
     writer.write_record(&headers);
     for result_row in result_rows {
         writer.write_record(&result_row);
@@ -162,11 +172,31 @@ pub fn aggregate_result_by_symbols(file_name: &str, output_file: &str) -> Result
     Ok(())
 }
 
+fn get_other_columns(record: &StringRecord, other_columns: &Vec<String>, offset: usize, results: &mut BTreeMap<String, String>) {
+    for i in 0..other_columns.len() {
+        results.insert(
+            other_columns[i].to_string(),
+            // first 2 columns of the record are, center and total votes. Skip them
+            record.get(i + offset).unwrap_or("0").to_string(),
+        );
+    }
+}
+
+fn get_result(record: &StringRecord, symbol_positions: &Vec<String>, results: &mut BTreeMap<String, String>) {
+    for i in 0..symbol_positions.len() {
+        results.insert(
+            symbol_positions[i].to_string(),
+            // first 2 columns of the record are, center and total votes. Skip them
+            record.get(i + 2).unwrap_or("0").to_string()
+        );
+    }
+}
+
 pub fn check_for_new_symbols(record: &StringRecord, symbols: &mut Vec<String>) {
     for sym in record {
         let s = sym.trim().to_string();
-        if s.is_empty() { continue }
-        if symbols.contains(&s) { continue }
+        if s.is_empty() { continue; }
+        if symbols.contains(&s) { continue; }
         symbols.push(s);
     }
 }
