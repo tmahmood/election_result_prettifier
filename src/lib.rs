@@ -7,11 +7,12 @@ use std::collections::HashMap;
 use crate::errors::InvalidConstituencyName;
 use regex::Regex;
 use std::collections::btree_map::BTreeMap;
+use std::ops::Index;
 
 
 mod errors;
 
-const CONSTITUENCY_REG: &str = "([০১২৩৪৫৬৭৮৯]){3}.[^:]*: (সংসদ সদস্য)";
+const CONSTITUENCY_REG: &str = "^(?P<cname>[০১২৩৪৫৬৭৮৯]{3} .[^-() ,]*-[০১২৩৪৫৬৭৮৯]{1,2})";
 
 
 #[derive(Debug, Clone, Eq, PartialEq, Hash, Ord, PartialOrd)]
@@ -49,20 +50,22 @@ pub fn get_constituencies_translated() -> HashMap<String, String> {
     cons_list
 }
 
+fn extract_name(re: &Regex, input: &str) -> Option<String> {
+    re.captures(input).and_then(|cap| {
+        cap.name("cname").map(|login| login.as_str().to_string())
+    })
+}
 // get constituency name
 pub fn get_constituency_name(line: &StringRecord, const_translated: &HashMap<String, String>) -> Result<String, Box<dyn Error>> {
     // constituency names are located in 3rd column, ends at ':' sign
     // find to ':' and slice it to that position from 0
-    line.iter()
-        .filter(|s| !s.is_empty())
-        .map(|s| {
-            s.to_string()
-                .find(':')
-                .ok_or_else(|| InvalidConstituencyName.into())
-                .and_then(|u|
-                    Ok(const_translated.get(&s[0..u].trim().to_string()).unwrap().clone())
-                )
-        }).collect()
+    let re = Regex::new(CONSTITUENCY_REG).unwrap();
+    let found: Vec<String> = line.iter()
+        .filter(|s| re.is_match(s))
+        .map(|s| extract_name(&re, s.clone()).unwrap())
+        .map(|k| const_translated.get(&k).unwrap_or(&k).to_string())
+        .collect();
+    found.get(0).ok_or_else(||InvalidConstituencyName.into()).and_then(|d| Ok(d.to_string()))
 }
 
 // go through a CSV file and calculate total votes par symbols on
@@ -85,6 +88,8 @@ pub fn aggregate_result_by_symbols(file_name: &str, output_file: &str) -> Result
     // symbol ordering for current section
     let mut symbol_positions: Vec<String> = Vec::new();
     // go through all the lines
+    let mut count = 0;
+    //
     for result in rdr.unwrap().records() {
         // load the row
         let record = result.unwrap();
@@ -92,6 +97,9 @@ pub fn aggregate_result_by_symbols(file_name: &str, output_file: &str) -> Result
         if is_constituency_row(&record) {
             // set the constituency name
             constituency = get_constituency_name(&record, &const_translate).unwrap();
+            if count > 0 { println!("{}", count) }
+            count = 0;
+            print!(r#""{}","#, constituency);
             // no need to process this row anymore
             continue;
         }
@@ -119,6 +127,7 @@ pub fn aggregate_result_by_symbols(file_name: &str, output_file: &str) -> Result
             // no need to process this row anymore
             continue;
         }
+        count+= 1;
         // store the votes
         let mut results = BTreeMap::new();
         get_result(&record, &symbol_positions, &mut results);

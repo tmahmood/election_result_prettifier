@@ -1,21 +1,38 @@
-use crate::{get_constituency_name, aggregate_result_by_symbols, check_for_new_symbols, is_constituency_row, is_center_information_row, CONSTITUENCY_REG, get_constituencies_translated, get_result, get_other_columns};
+use crate::{get_constituency_name, aggregate_result_by_symbols, check_for_new_symbols, is_constituency_row, is_center_information_row, CONSTITUENCY_REG, get_constituencies_translated, get_result, get_other_columns, extract_name};
 use std::fs::File;
 use std::io::Read;
 use csv::StringRecord;
 use regex::Regex;
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 const FILE_NAME: &str = "res/test_data.csv";
 const OUTPUT_FILE_NAME: &str = "res/output.csv";
 const CONST_LINE: &str = ",,\"০০৩ ঠাকুরগাঁও-১ : সংসদ সদস্য\",,,,,,,,,,,,,,,,,,,";
-const CONST_LINE_WRONG: &str = ",,\"০০৩ ঠাকুরগাঁও-১ সংসদ সদস্য\",,,,,,,,,,,,,,,,,,,";
+const CONST_LINE_WRONG: &str = ",,\"০০৩ ঠাকুরগাঁও১ সংসদ সদস্য\",,,,,,,,,,,,,,,,,,,";
 const CONST_LINE_EXTRA_SPACE: &str = ",,,\"০০৩ ঠাকুরগাঁও-১ : সংসদ সদস্য\",,,,,,,,,,,,,,,,,,,";
+const CONST_LINE_SHOULD_NOT_OK: &str = "৪০১, ৪০২, ৪০৩, ৪০৪, ৪০৫, ৪০৬, ৪০৭), (পুরুষ ভোটার-১";
 
 #[test]
 pub fn t_regexp_correct() {
     let re = Regex::new(CONSTITUENCY_REG).unwrap();
-    assert!(re.is_match("০০১ This is : সংসদ সদস্য)"))
+    assert!(re.is_match("০০১ Thisis-০১ : সংসদ সদস্য)"))
 }
+
+#[test]
+fn t_why_messing_up() {
+    const CON: &str = r#",,,"০৫৪ রাজশাহী-৩",,,,,,,,,,,,,,,,,,"#;
+    let r = read_single_csv_row(CON).unwrap();
+    println!("{:?}", r);
+    assert!(is_constituency_row(&r));
+    let mut const_translated = HashMap::new();
+    const_translated.insert("০৫৪ রাজশাহী-৩".to_string(), "54 Rajshahi-3".to_string());
+    const_translated.insert("০০২ পঞ্চগড়-২ ".to_string(), "2 Panchagarh-2".to_string());
+    let n = get_constituency_name(&r, &const_translated).unwrap();
+    println!("{}", n);
+    assert_eq!(n, "54 Rajshahi-3");
+
+}
+
 
 #[test]
 fn t_constituency_row() {
@@ -23,6 +40,44 @@ fn t_constituency_row() {
     let r = read_single_csv_row(CON);
     assert!(is_constituency_row(&r.unwrap()));
 }
+
+#[test]
+fn t_constituency_row_alt() {
+    const CON: &str = r#",,,"০০১ পঞ্চগড়-১",,,,,,,,,,,,,,,,,,"#;
+    let r = read_single_csv_row(CON);
+    assert!(is_constituency_row(&r.unwrap()));
+}
+
+#[test]
+fn t_constituency_name_alt() {
+    const CON: &str = r#",,,"০০১ পঞ্চগড়-১ : সংসদ সদস্য",,,,,,,,,,,,,,,,,,"#;
+    let r = read_single_csv_row(CON).unwrap();
+    let mut const_translated = HashMap::new();
+    const_translated.insert("০০১ পঞ্চগড়-১".to_string(), "1 Panchagarh-1".to_string());
+    const_translated.insert("০০২  পঞ্চগড়-২ ".to_string(), "2 Panchagarh-2".to_string());
+    let n = get_constituency_name(&r, &const_translated).unwrap();
+    assert_eq!(n, "1 Panchagarh-1");
+}
+
+#[test]
+fn t_invalid_constituency_name() {
+    let re = Regex::new(CONSTITUENCY_REG).unwrap();
+    let r = extract_name(&re, CONST_LINE_SHOULD_NOT_OK);
+    println!("{:?}", r);
+    assert!(r.is_none())
+}
+
+#[test]
+fn t_constituency_name() {
+    const CON: &str = r#",,,"০০১ পঞ্চগড়-১",,,,,,,,,,,,,,,,,,"#;
+    let r = read_single_csv_row(CON).unwrap();
+    let mut const_translated = HashMap::new();
+    const_translated.insert("০০১ পঞ্চগড়-১".to_string(), "1 Panchagarh-1".to_string());
+    const_translated.insert("০০২  পঞ্চগড়-২ ".to_string(), "2 Panchagarh-2".to_string());
+    let n = get_constituency_name(&r, &const_translated).unwrap();
+    assert_eq!(n, "1 Panchagarh-1");
+}
+
 
 #[test]
 fn t_center_row() {
@@ -77,6 +132,7 @@ fn t_find_constituency_names_on_fail() {
     let c_list = get_constituencies_translated();
     let record = read_single_csv_row(CONST_LINE_WRONG);
     let res = get_constituency_name(&record.unwrap(), &c_list);
+    println!("{:?}", res);
     assert!(res.is_err());
 }
 
