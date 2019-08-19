@@ -1,5 +1,7 @@
 /target
 **/*.rs.bk
 Cargo.lock
+res/all_data.csv
+res/all_results.csv
 res/output.csv
 .idea/workspace.xml
